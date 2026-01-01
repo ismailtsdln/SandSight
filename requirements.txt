@@ -1,0 +1,11 @@
+typer[all]
+rich
+pefile
+lief
+androguard
+yara-python
+python-magic
+scapy
+capstone
+keystone-engine
+jinja2
