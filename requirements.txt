@@ -10,3 +10,4 @@ capstone
 keystone-engine
 jinja2
 docker
+requests
