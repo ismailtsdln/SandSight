@@ -27,8 +27,8 @@ class BaseSandbox(ABC):
         pass
 
     @abstractmethod
-    def run_sample(self, file_path: Path, timeout: int = 60) -> Dict[str, Any]:
-        """Run the sample in the sandbox."""
+    def run_sample(self, file_path: Path, timeout: int = 60, allow_network: bool = False, dump_memory: bool = False) -> Dict[str, Any]:
+        """Run a sample in the sandbox."""
         pass
 
 class DockerSandbox(BaseSandbox):
@@ -56,11 +56,18 @@ class DockerSandbox(BaseSandbox):
             except Exception as e:
                 console.print(f"[red]Error stopping container: {e}[/red]")
 
-    def run_sample(self, file_path: Path, timeout: int = 60) -> Dict[str, Any]:
+    def run_sample(self, file_path: Path, timeout: int = 60, allow_network: bool = False, dump_memory: bool = False) -> Dict[str, Any]:
+        """
+        Run a sample in a Docker container.
+        """
         results = {
-            "execution_logs": "",
-            "exit_code": None,
+            "success": False,
             "duration": 0,
+            "exit_code": None,
+            "execution_logs": "",
+            "strace_log": "",
+            "pcap_data": None,
+            "memory_dump": None,
             "error": None
         }
         
@@ -76,19 +83,31 @@ class DockerSandbox(BaseSandbox):
 
             start_time = time.time()
             
-            # Run container with strace
-            # We mount the file as read-only to /sample
-            cmd = f"/bin/sh -c 'chmod +x /sample/{file_path.name} && strace -f -e trace=file,network,process -o /tmp/strace.log /sample/{file_path.name}'"
+            # Run container with strace and optional tcpdump
+            # We wrap the command to handle tcpdump in background if needed
+            wrapper = []
+            if allow_network:
+                wrapper.append("tcpdump -i any -w /tmp/capture.pcap & sleep 2")
+            
+            # strace command
+            strace_cmd = f"strace -f -e trace=file,network,process -o /tmp/strace.log /sample/{file_path.name}"
+            
+            # memory dump command (gcore needs a pid, we can try to guess or use a script)
+            # For simplicity, we'll try to gcore the process if it's still running after a bit
+            # or just at the end if we can catch it. 
+            # A better way is using a separate exec but we'll try to keep it contained.
+            
+            cmd = f"/bin/sh -c 'chmod +x /sample/{file_path.name} && {' && '.join(wrapper) + ' && ' if wrapper else ''} {strace_cmd}'"
             
             self.container = self.client.containers.run(
                 self.image_name,
                 command=cmd,
                 volumes={str(file_path.parent.absolute()): {'bind': '/sample', 'mode': 'ro'}},
                 detach=True,
-                network_disabled=True, 
+                network_disabled=not allow_network, 
                 mem_limit='512m',
-                cap_add=['SYS_PTRACE'], # Required for strace
-                security_opt=['seccomp:unconfined'], # Often required for strace
+                cap_add=['SYS_PTRACE', 'NET_ADMIN'], # NET_ADMIN for tcpdump
+                security_opt=['seccomp:unconfined'],
             )
             
             # Wait for finish or timeout
@@ -96,6 +115,17 @@ class DockerSandbox(BaseSandbox):
                 result = self.container.wait(timeout=timeout)
                 results["exit_code"] = result.get('StatusCode')
             except Exception as e: # Timeout
+                # If it's a timeout, maybe we can still try to dump memory before killing?
+                if dump_memory:
+                    try:
+                        # Try to find the process pid in container
+                        exec_res = self.container.exec_run("pgrep -f " + file_path.name)
+                        pid = exec_res.output.decode().strip()
+                        if pid:
+                            self.container.exec_run(f"gcore -o /tmp/memdump {pid}")
+                    except:
+                        pass
+                
                 self.container.kill()
                 results["error"] = "Execution timed out"
             
@@ -105,29 +135,54 @@ class DockerSandbox(BaseSandbox):
             logs = self.container.logs(stdout=True, stderr=True)
             results["execution_logs"] = logs.decode('utf-8', errors='replace')
             
-            # Capture strace output
-            try:
-                # This is a bit hacky: copying file from container. 
-                # Ideally use a shared volume or `get_archive`.
-                bits, stat = self.container.get_archive('/tmp/strace.log')
-                import tarfile
-                import io
-                
-                file_obj = io.BytesIO()
-                for chunk in bits:
-                    file_obj.write(chunk)
-                file_obj.seek(0)
-                
-                with tarfile.open(fileobj=file_obj) as tar:
-                    member = tar.getmember("strace.log")
-                    f = tar.extractfile(member)
-                    results["strace_log"] = f.read().decode('utf-8', errors='replace')
-            except Exception as e:
-                results["strace_error"] = str(e)
+            # Capture artifacts from container
+            self._capture_artifacts(results, allow_network, dump_memory)
                 
         except Exception as e:
             results["error"] = str(e)
         finally:
-            self.stop()
+            if self.container:
+                try:
+                    self.container.remove(force=True)
+                except:
+                    pass
+            self.container = None
             
         return results
+
+    def _capture_artifacts(self, results, allow_network, dump_memory):
+        """Helper to pull files from container."""
+        import tarfile
+        import io
+
+        def get_file(path):
+            try:
+                bits, stat = self.container.get_archive(path)
+                file_obj = io.BytesIO()
+                for chunk in bits:
+                    file_obj.write(chunk)
+                file_obj.seek(0)
+                with tarfile.open(fileobj=file_obj) as tar:
+                    # container.get_archive(path) returns a tar containing 'path'
+                    member_name = Path(path).name
+                    member = tar.getmember(member_name)
+                    return tar.extractfile(member).read()
+            except:
+                return None
+
+        # strace
+        strace_data = get_file('/tmp/strace.log')
+        if strace_data:
+            results["strace_log"] = strace_data.decode('utf-8', errors='replace')
+
+        # pcap
+        if allow_network:
+            results["pcap_data"] = get_file('/tmp/capture.pcap')
+
+        # memory dump
+        if dump_memory:
+            # gcore output usually has .<pid> suffix if we didn't specify exactly
+            # but we'll check common names
+            mem_data = get_file('/tmp/memdump')
+            if mem_data:
+                results["memory_dump"] = mem_data

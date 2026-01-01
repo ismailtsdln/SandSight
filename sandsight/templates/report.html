@@ -251,6 +251,71 @@
             <h3>System Call Trace (strace)</h3>
             <pre class="code-block">{{ results.dynamic_analysis.strace_log }}</pre>
             {% endif %}
+
+            {% if results.dynamic_analysis.behavior %}
+            <h3>Behavioral Analysis</h3>
+            <table class="info-table">
+                <tr>
+                    <th>Files Accessed</th>
+                    <td>
+                        {% if results.dynamic_analysis.behavior.files_accessed|length > 0 %}
+                        <div class="import-list">{{ results.dynamic_analysis.behavior.files_accessed|join(', ') }}</div>
+                        {% else %}None detected{% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <th>Network Connections</th>
+                    <td>
+                        {% if results.dynamic_analysis.behavior.network_connections|length > 0 %}
+                        <div class="import-list">{{ results.dynamic_analysis.behavior.network_connections|join(', ') }}
+                        </div>
+                        {% else %}None detected{% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <th>Processes Spawned</th>
+                    <td>
+                        {% if results.dynamic_analysis.behavior.processes_spawned|length > 0 %}
+                        <div class="import-list">{{ results.dynamic_analysis.behavior.processes_spawned|join(', ') }}
+                        </div>
+                        {% else %}None detected{% endif %}
+                    </td>
+                </tr>
+            </table>
+            {% if results.dynamic_analysis.behavior.suspicious_calls %}
+            <div class="warning">
+                <strong>Suspicious Calls Detected:</strong>
+                <ul>{% for call in results.dynamic_analysis.behavior.suspicious_calls %}<li>{{ call }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            {% endif %}
+
+            {% if results.dynamic_analysis.pcap_file or results.dynamic_analysis.memory_forensics %}
+            <h3>Analysis Artifacts</h3>
+            <table class="info-table">
+                {% if results.dynamic_analysis.pcap_file %}
+                <tr>
+                    <th>PCAP Capture</th>
+                    <td>Generated: <code class="code-block"
+                            style="display:inline; padding: 2px 5px;">{{ results.dynamic_analysis.pcap_file }}</code>
+                    </td>
+                </tr>
+                {% endif %}
+                {% if results.dynamic_analysis.memory_forensics %}
+                <tr>
+                    <th>Memory Forensics</th>
+                    <td>
+                        {% if results.dynamic_analysis.memory_forensics.memory_analysis.matches|length > 0 %}
+                        <span class="badge badge-red">Suspicious Artifacts Found</span>
+                        {% else %}
+                        <span class="badge badge-green">Clean</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+            </table>
+            {% endif %}
         </div>
         {% endif %}
 

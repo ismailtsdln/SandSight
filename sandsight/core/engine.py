@@ -9,6 +9,7 @@ from sandsight.modules.static.ios_parser import IPAParser
 from sandsight.modules.static.yara_scanner import YaraScanner
 from sandsight.modules.dynamic.sandbox import DockerSandbox
 from sandsight.modules.dynamic.memory import MemoryAnalyzer
+from sandsight.modules.dynamic.monitor import Monitor
 from sandsight.core.plugin_manager import PluginManager
 from sandsight.core.intelligence import IntelManager
 
@@ -26,6 +27,7 @@ class SandSightCore:
         }
         self.yara_scanner = YaraScanner()
         self.memory_analyzer = MemoryAnalyzer()
+        self.monitor = Monitor()
         self.plugin_manager = PluginManager()
         self.plugin_manager.discover_plugins()
         self.intel_manager = IntelManager()
@@ -95,7 +97,7 @@ class SandSightCore:
         
         return results
 
-    def run_sandbox(self, file_path: Path) -> Dict[str, Any]:
+    def run_sandbox(self, file_path: Path, allow_network: bool = False, dump_memory: bool = False) -> Dict[str, Any]:
         """
         Orchestrate sandbox execution.
         """
@@ -103,16 +105,42 @@ class SandSightCore:
         sandbox = DockerSandbox(working_dir=file_path.parent)
         
         console.print(f"[bold blue][*][/bold blue] specific image: sandsight-sandbox:latest")
-        # In a real scenario, we might want to ensure the image exists here
+        
+        if allow_network:
+            console.print(f"[bold yellow][!][/bold yellow] Network access ENABLED for this sample.")
         
         console.print(f"[bold blue][*][/bold blue] Running sample in isolated container...")
-        results = sandbox.run_sample(file_path)
+        results = sandbox.run_sample(file_path, allow_network=allow_network, dump_memory=dump_memory)
         
         if results.get("error"):
             console.print(f"[bold red][!][/bold red] Sandbox Error: {results['error']}")
         else:
             console.print(f"[bold green][+][/bold green] Execution finished. Duration: {results['duration']:.2f}s")
-        
+            
+            # Parse behaviors from strace
+            if results.get("strace_log"):
+                console.print(f"[bold blue][*][/bold blue] Analyzing behavioral patterns...")
+                results["behavior"] = self.monitor.parse_strace(results["strace_log"])
+            
+            # Save PCAP if available
+            if results.get("pcap_data"):
+                pcap_path = file_path.with_suffix(".pcap")
+                with open(pcap_path, "wb") as f:
+                    f.write(results["pcap_data"])
+                console.print(f"[bold green][+][/bold green] Network capture saved to: [cyan]{pcap_path}[/cyan]")
+                results["pcap_file"] = str(pcap_path)
+
+            # Analyze Memory Dump if available
+            if results.get("memory_dump"):
+                dump_path = file_path.with_suffix(".dmp")
+                with open(dump_path, "wb") as f:
+                    f.write(results["memory_dump"])
+                console.print(f"[bold green][+][/bold green] Memory dump saved to: [cyan]{dump_path}[/cyan]")
+                
+                console.print(f"[bold blue][*][/bold blue] Performing forensics on captured memory dump...")
+                mem_results = self.analyze_memory(dump_path)
+                results["memory_forensics"] = mem_results
+
         # Plugin Hooks: Dynamic Analysis
         console.print(f"[bold blue][*][/bold blue] Running plugin dynamic analysis hooks...")
         self.plugin_manager.run_dynamic_hooks(results)

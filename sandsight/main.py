@@ -43,53 +43,56 @@ def main(ctx: typer.Context):
 def scan(
     path: Path = typer.Argument(..., help="Path to the file to scan."),
     sandbox: bool = typer.Option(True, "--sandbox/--no-sandbox", help="Enable or disable sandbox execution."),
-    report: bool = typer.Option(True, "--report/--no-report", help="Generate a report after scan."),
-    format: str = typer.Option("html", "--format", "-f", help="Report format (json/html)."),
+    format: str = typer.Option("text", "--format", "-f", help="Output format (text, json, html)."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Path to save the report."),
+    network: bool = typer.Option(False, "--network", help="Enable network access in sandbox."),
+    memory_dump: bool = typer.Option(False, "--memory-dump", help="Capture memory dump from sandbox."),
 ):
     """
-    Perform a complete scan (Static + Dynamic if enabled) on a file.
+    Perform a full analysis (Static + Dynamic + Intelligence) on a file.
     """
     if not path.exists():
         console.print(f"[bold red]Error:[/bold red] File not found: {path}")
         raise typer.Exit(code=1)
 
-    console.print(f"[bold green][*][/bold green] Starting scan for: [cyan]{path}[/cyan]")
-    
-    results = {}
-
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
-        transient=True,       
+        transient=True,
     ) as progress:
-        task1 = progress.add_task(description="Running static analysis...", total=None)
+        progress.add_task(description="Analyzing file...", total=None)
         
         try:
-            # Static Analysis
+            # 1. Static Analysis
             static_results = core.run_static_analysis(path)
-            results.update(static_results)
-            progress.console.print(f"[bold green][+][/bold green] Static analysis complete.")
             
-            # Sandbox Analysis
+            # 2. Dynamic Analysis
+            dynamic_results = {}
             if sandbox:
-                task2 = progress.add_task(description="Running sandbox analysis...", total=None)
-                sandbox_results = core.run_sandbox(path)
-                results.update(sandbox_results)
-                progress.console.print(f"[bold green][+][/bold green] Sandbox analysis complete.")
+                dynamic_results = core.run_sandbox(path, allow_network=network, dump_memory=memory_dump)
+            
+            # 3. Combine results
+            results = {
+                "file_info": {
+                    "name": path.name,
+                    "path": str(path.absolute()),
+                    "size": path.stat().st_size,
+                    "type": static_results.get("file_info", {}).get("type", "Unknown")
+                },
+                "static_analysis": static_results.get("static_analysis", {}),
+                "detections": static_results.get("detections", []),
+                "dynamic_analysis": dynamic_results.get("dynamic_analysis"),
+                "intelligence": static_results.get("intelligence")
+            }
+
+            # Reporting
+            output_name = f"report_{path.stem}"
+            output_path = reporter.generate_report(results, output_name, format=format)
+            progress.console.print(f"[bold green][+][/bold green] Analysis complete. Report generated: [cyan]{output_path}[/cyan]")
             
         except Exception as e:
             progress.console.print(f"[bold red]Error during analysis:[/bold red] {e}")
-            # Continue to report even if partial failure? 
-            # For now, let's keep what we have.
-
-    # Reporting
-    if report:
-        try:
-            output_name = f"report_{path.stem}"
-            output_path = reporter.generate_report(results, output_name, format=format)
-            console.print(f"[bold green][+][/bold green] Report generated: [cyan]{output_path}[/cyan]")
-        except Exception as e:
-             console.print(f"[bold red]Error generating report:[/bold red] {e}")
+            raise typer.Exit(code=1)
 
 
 @app.command()
@@ -122,6 +125,8 @@ def static(
 @app.command()
 def sandbox_run(
     path: Path = typer.Argument(..., help="Path to the file to run in sandbox."),
+    network: bool = typer.Option(False, "--network", help="Enable network access in sandbox."),
+    memory_dump: bool = typer.Option(False, "--memory-dump", help="Capture memory dump from sandbox."),
 ):
     """
     Run a file in the isolated sandbox.
@@ -133,7 +138,7 @@ def sandbox_run(
     console.print(f"[bold yellow][!][/bold yellow] Warning: Executing sample in sandbox: [cyan]{path}[/cyan]")
     
     try:
-        core.run_sandbox(path)
+        core.run_sandbox(path, allow_network=network, dump_memory=memory_dump)
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
 
