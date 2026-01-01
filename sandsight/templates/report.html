@@ -204,7 +204,6 @@
             <h2>Static Analysis Details</h2>
 
             {% if results.static_analysis.permissions %}
-            <h3>Permissions</h3>
             <ul>{% for perm in results.static_analysis.permissions %}<li>{{ perm }}</li>{% endfor %}</ul>
             {% endif %}
 
