@@ -8,6 +8,9 @@ from sandsight.modules.static.android_parser import AndroParser
 from sandsight.modules.static.ios_parser import IPAParser
 from sandsight.modules.static.yara_scanner import YaraScanner
 from sandsight.modules.dynamic.sandbox import DockerSandbox
+from sandsight.modules.dynamic.memory import MemoryAnalyzer
+from sandsight.core.plugin_manager import PluginManager
+from sandsight.core.intelligence import IntelManager
 
 console = Console()
 
@@ -22,6 +25,10 @@ class SandSightCore:
             "application/zip": "ZIP/IPA",
         }
         self.yara_scanner = YaraScanner()
+        self.memory_analyzer = MemoryAnalyzer()
+        self.plugin_manager = PluginManager()
+        self.plugin_manager.discover_plugins()
+        self.intel_manager = IntelManager()
 
     def detect_file_type(self, file_path: Path) -> str:
         """
@@ -78,6 +85,14 @@ class SandSightCore:
         console.print(f"[bold blue][*][/bold blue] Running YARA scan...")
         results["detections"] = self.yara_scanner.scan(file_path)
         
+        # Plugin Hooks: Static Analysis
+        console.print(f"[bold blue][*][/bold blue] Running plugin static analysis hooks...")
+        self.plugin_manager.run_static_hooks(str(file_path), results)
+        
+        # Threat Intelligence Enrichment
+        if "hashes" in results.get("static_analysis", {}):
+            results["intelligence"] = self.intel_manager.enrich_results(results["static_analysis"]["hashes"])
+        
         return results
 
     def run_sandbox(self, file_path: Path) -> Dict[str, Any]:
@@ -97,5 +112,24 @@ class SandSightCore:
             console.print(f"[bold red][!][/bold red] Sandbox Error: {results['error']}")
         else:
             console.print(f"[bold green][+][/bold green] Execution finished. Duration: {results['duration']:.2f}s")
+        
+        # Plugin Hooks: Dynamic Analysis
+        console.print(f"[bold blue][*][/bold blue] Running plugin dynamic analysis hooks...")
+        self.plugin_manager.run_dynamic_hooks(results)
             
         return {"dynamic_analysis": results}
+
+    def analyze_memory(self, dump_path: Path) -> Dict[str, Any]:
+        """
+        Analyze a memory dump.
+        """
+        console.print(f"[bold blue][*][/bold blue] Analyzing memory dump: [cyan]{dump_path}[/cyan]")
+        results = self.memory_analyzer.analyze_dump(dump_path)
+        
+        match_count = len(results.get("matches", []))
+        if match_count > 0:
+            console.print(f"[bold red][!][/bold red] Found {match_count} suspicious memory artifacts.")
+        else:
+             console.print(f"[bold green][+][/bold green] No suspicious memory artifacts found.")
+             
+        return {"memory_analysis": results}

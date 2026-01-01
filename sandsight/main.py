@@ -138,6 +138,24 @@ def sandbox_run(
         console.print(f"[bold red]Error:[/bold red] {e}")
 
 @app.command()
+def memory_scan(
+    path: Path = typer.Argument(..., help="Path to the memory dump file."),
+):
+    """
+    Scan a memory dump for suspicious artifacts.
+    """
+    if not path.exists():
+        console.print(f"[bold red]Error:[/bold red] File not found: {path}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold green][*][/bold green] Scanning memory dump: [cyan]{path}[/cyan]")
+    
+    try:
+        core.analyze_memory(path)
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+
+@app.command()
 def yara_scan(
     path: Path = typer.Argument(..., help="Path to the file to scan with YARA."),
     rules: Optional[Path] = typer.Option(None, "--rules", "-r", help="Path to custom YARA rules file."),

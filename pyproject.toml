@@ -29,6 +29,7 @@ dependencies = [
     "capstone",
     "keystone-engine",
     "jinja2",
+    "requests",
 ]
 
 [project.scripts]
