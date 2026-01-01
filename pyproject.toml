@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sandsight"
+version = "0.1.0"
+authors = [
+  { name="Ismail Tasdelen" }
+]
+description = "A cross-platform malware analysis and sandbox framework."
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+]
+dependencies = [
+    "typer[all]",
+    "rich",
+    "pefile",
+    "lief",
+    "androguard",
+    "yara-python",
+    "python-magic",
+    "scapy",
+    "capstone",
+    "keystone-engine",
+    "jinja2",
+]
+
+[project.scripts]
+sandsight = "sandsight.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sandsight*"]
