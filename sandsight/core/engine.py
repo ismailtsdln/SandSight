@@ -7,6 +7,7 @@ from sandsight.modules.static.macho_parser import MachOParser
 from sandsight.modules.static.android_parser import AndroParser
 from sandsight.modules.static.ios_parser import IPAParser
 from sandsight.modules.static.yara_scanner import YaraScanner
+from sandsight.modules.dynamic.sandbox import DockerSandbox
 
 console = Console()
 
@@ -83,5 +84,18 @@ class SandSightCore:
         """
         Orchestrate sandbox execution.
         """
-        # TODO: Implement sandbox isolation
-        return {"sandbox_results": "Not implemented yet"}
+        console.print(f"[bold blue][*][/bold blue] Initializing Docker Sandbox...")
+        sandbox = DockerSandbox(working_dir=file_path.parent)
+        
+        console.print(f"[bold blue][*][/bold blue] specific image: sandsight-sandbox:latest")
+        # In a real scenario, we might want to ensure the image exists here
+        
+        console.print(f"[bold blue][*][/bold blue] Running sample in isolated container...")
+        results = sandbox.run_sample(file_path)
+        
+        if results.get("error"):
+            console.print(f"[bold red][!][/bold red] Sandbox Error: {results['error']}")
+        else:
+            console.print(f"[bold green][+][/bold green] Execution finished. Duration: {results['duration']:.2f}s")
+            
+        return {"dynamic_analysis": results}

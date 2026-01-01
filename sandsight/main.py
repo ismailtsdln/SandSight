@@ -124,11 +124,18 @@ def sandbox_run(
     path: Path = typer.Argument(..., help="Path to the file to run in sandbox."),
 ):
     """
-    Run a file in the isolated sandbox (Skeleton).
+    Run a file in the isolated sandbox.
     """
+    if not path.exists():
+        console.print(f"[bold red]Error:[/bold red] File not found: {path}")
+        raise typer.Exit(code=1)
+
     console.print(f"[bold yellow][!][/bold yellow] Warning: Executing sample in sandbox: [cyan]{path}[/cyan]")
-    # Placeholder for Phase 2
-    console.print("[dim]Sandbox functionality is under development (Phase 2).[/dim]")
+    
+    try:
+        core.run_sandbox(path)
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
 
 @app.command()
 def yara_scan(

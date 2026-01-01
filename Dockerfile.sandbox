@@ -1,0 +1,19 @@
+FROM ubuntu:22.04
+
+# Install basic dependencies
+RUN apt-get update && apt-get install -y \
+    strace \
+    ltrace \
+    file \
+    net-tools \
+    iputils-ping \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a sample directory
+WORKDIR /sample
+
+# Create a user for running samples
+RUN useradd -m -s /bin/bash sandboxuser
+USER sandboxuser
+
+CMD ["/bin/bash"]
