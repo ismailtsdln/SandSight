@@ -41,7 +41,7 @@ class PEParser(BaseParser):
         # Sections analysis
         for section in self.pe.sections:
             section_data = {
-                "name": section.Name.decode().strip('\x00'),
+                "name": section.Name.decode(errors='replace').strip('\x00'),
                 "virtual_address": hex(section.VirtualAddress),
                 "virtual_size": hex(section.Misc_VirtualSize),
                 "raw_size": hex(section.SizeOfRawData),
