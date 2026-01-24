@@ -1,4 +1,6 @@
 name: SandSight CI
+permissions:
+  contents: read
 
 on:
   push:
